@@ -4,6 +4,7 @@ use axum::{
     http::Method,
     response::Redirect,
     Json,
+    extract::DefaultBodyLimit,
 };
 use tower_http::cors::{CorsLayer, Any};
 use std::sync::Arc;
@@ -125,6 +126,8 @@ async fn main() {
         // Mount API router under base path
         .nest("/xml-compare-api", api_router)
         
+        // Configure body limits (500MB for large batch operations)
+        .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
         .layer(cors);
 
         // Start background session cleanup task

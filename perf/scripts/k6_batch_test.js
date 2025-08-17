@@ -24,9 +24,9 @@ export const options = {
       executor: 'shared-iterations', 
       vus: 1,
       iterations: 1,
-      maxDuration: '900s', // 15 minutes max
+      maxDuration: '1800s', // 30 minutes max for larger tests
       tags: { test_type: 'nominal' },
-      env: { TEST_SIZE: '100000' },
+      env: { TEST_SIZE: __ENV.NOMINAL_SIZE || '100000' },
       startTime: '65s' // Start after smoke test
     },
     
@@ -57,11 +57,11 @@ export const options = {
   },
   
   thresholds: {
-    http_req_duration: ['p(95)<300000'], // 95% under 5 minutes
+    http_req_duration: ['p(95)<1800000'], // 95% under 30 minutes for large tests
     http_req_failed: ['rate<0.01'], // Less than 1% failure rate
     xml_pairs_per_second: ['rate>100'], // At least 100 pairs/sec
     'http_req_duration{test_type:smoke}': ['p(95)<60000'], // Smoke test under 1 min
-    'http_req_duration{test_type:nominal}': ['p(95)<300000'], // Nominal under 5 min
+    'http_req_duration{test_type:nominal}': ['p(95)<1800000'], // Nominal under 30 min for 600k
   }
 };
 
