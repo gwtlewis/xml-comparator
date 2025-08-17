@@ -4,17 +4,15 @@ use crate::models::{
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use std::collections::HashMap;
-use std::io::Cursor;
 
 #[derive(Debug, Clone)]
 pub struct XmlElement {
     pub name: String,
     pub attributes: HashMap<String, String>,
     pub content: Option<String>,
-    pub children: Vec<XmlElement>,
-    pub path: String,
 }
 
+#[derive(Clone)]
 pub struct XmlComparisonService;
 
 impl XmlComparisonService {
@@ -33,10 +31,11 @@ impl XmlComparisonService {
         // Compare elements
         for (path, element1) in &xml1_elements {
             if let Some(element2) = xml2_elements.get(path) {
-                if self.elements_match(element1, element2, &request.ignore_paths, &request.ignore_properties) {
+                let element_diffs = self.create_element_diffs(path, element1, element2, &request.ignore_paths, &request.ignore_properties);
+                if element_diffs.is_empty() {
                     matched_elements += 1;
                 } else {
-                    diffs.push(self.create_diff(path, element1, element2, &request.ignore_paths, &request.ignore_properties));
+                    diffs.extend(element_diffs);
                 }
             } else {
                 diffs.push(XmlDiff {
@@ -109,8 +108,6 @@ impl XmlComparisonService {
                         name: name.clone(),
                         attributes,
                         content: None,
-                        children: Vec::new(),
-                        path: path.clone(),
                     };
 
                     elements.insert(path.clone(), element);
@@ -125,7 +122,7 @@ impl XmlComparisonService {
                     }
                 }
                 Ok(Event::End(_)) => {
-                    if let Some(path) = stack.pop() {
+                    if let Some(_path) = stack.pop() {
                         current_path = stack.last().cloned().unwrap_or_default();
                     }
                 }
@@ -138,124 +135,122 @@ impl XmlComparisonService {
         Ok(elements)
     }
 
-    fn elements_match(
-        &self,
-        element1: &XmlElement,
-        element2: &XmlElement,
-        ignore_paths: &Option<Vec<String>>,
-        ignore_properties: &Option<Vec<String>>,
-    ) -> bool {
-        // Check if this path should be ignored
-        if let Some(ignore_paths) = ignore_paths {
-            if ignore_paths.iter().any(|path| element1.path.contains(path)) {
-                return true;
-            }
-        }
 
-        // Check if this element name should be ignored
-        if let Some(ignore_properties) = ignore_properties {
-            if ignore_properties.iter().any(|prop| &element1.name == prop) {
-                return true;
-            }
-        }
 
-        // Compare names
-        if element1.name != element2.name {
-            return false;
-        }
-
-        // Compare content (if not ignored)
-        if let Some(ignore_properties) = ignore_properties {
-            if !ignore_properties.iter().any(|prop| &element1.name == prop) {
-                if element1.content != element2.content {
-                    return false;
-                }
-            }
-        } else {
-            if element1.content != element2.content {
-                return false;
-            }
-        }
-
-        // Compare attributes (if not ignored)
-        for (key, value1) in &element1.attributes {
-            if let Some(ignore_properties) = ignore_properties {
-                if ignore_properties.iter().any(|prop| key == prop) {
-                    continue;
-                }
-            }
-            if let Some(value2) = element2.attributes.get(key) {
-                if value1 != value2 {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    fn create_diff(
+    fn create_element_diffs(
         &self,
         path: &str,
         element1: &XmlElement,
         element2: &XmlElement,
         ignore_paths: &Option<Vec<String>>,
         ignore_properties: &Option<Vec<String>>,
-    ) -> XmlDiff {
-        // Check content differences
+    ) -> Vec<XmlDiff> {
+        let mut diffs = Vec::new();
+
+        // Check if this path should be ignored
+        if let Some(ignore_paths) = ignore_paths {
+            if ignore_paths.iter().any(|ignore_path| self.path_matches(path, ignore_path)) {
+                return diffs;
+            }
+        }
+
+        // Check if this element name should be ignored
         if let Some(ignore_properties) = ignore_properties {
-            if !ignore_properties.iter().any(|prop| &element1.name == prop) {
-                if element1.content != element2.content {
-                    return XmlDiff {
-                        path: path.to_string(),
-                        diff_type: DiffType::ContentDifferent,
-                        expected: element1.content.clone(),
-                        actual: element2.content.clone(),
-                        message: "Content differs".to_string(),
-                    };
-                }
+            if ignore_properties.iter().any(|prop| &element1.name == prop) {
+                return diffs;
             }
+        }
+
+        // Check content differences
+        let content_ignored = if let Some(ignore_properties) = ignore_properties {
+            ignore_properties.iter().any(|prop| &element1.name == prop)
         } else {
-            if element1.content != element2.content {
-                return XmlDiff {
-                    path: path.to_string(),
-                    diff_type: DiffType::ContentDifferent,
-                    expected: element1.content.clone(),
-                    actual: element2.content.clone(),
-                    message: "Content differs".to_string(),
-                };
-            }
+            false
+        };
+
+        if !content_ignored && element1.content != element2.content {
+            diffs.push(XmlDiff {
+                path: path.to_string(),
+                diff_type: DiffType::ContentDifferent,
+                expected: element1.content.clone(),
+                actual: element2.content.clone(),
+                message: "Content differs".to_string(),
+            });
         }
 
         // Check attribute differences
         for (key, value1) in &element1.attributes {
-            if let Some(ignore_properties) = ignore_properties {
-                if ignore_properties.iter().any(|prop| key == prop) {
-                    continue;
-                }
-            }
-            if let Some(value2) = element2.attributes.get(key) {
-                if value1 != value2 {
-                    return XmlDiff {
+            let attr_ignored = if let Some(ignore_properties) = ignore_properties {
+                ignore_properties.iter().any(|prop| key == prop)
+            } else {
+                false
+            };
+
+            if !attr_ignored {
+                if let Some(value2) = element2.attributes.get(key) {
+                    if value1 != value2 {
+                        diffs.push(XmlDiff {
+                            path: path.to_string(),
+                            diff_type: DiffType::AttributeDifferent,
+                            expected: Some(format!("{}={}", key, value1)),
+                            actual: Some(format!("{}={}", key, value2)),
+                            message: format!("Attribute '{}' differs", key),
+                        });
+                    }
+                } else {
+                    diffs.push(XmlDiff {
                         path: path.to_string(),
                         diff_type: DiffType::AttributeDifferent,
                         expected: Some(format!("{}={}", key, value1)),
-                        actual: Some(format!("{}={}", key, value2)),
-                        message: format!("Attribute '{}' differs", key),
-                    };
+                        actual: None,
+                        message: format!("Attribute '{}' missing in second XML", key),
+                    });
                 }
             }
         }
 
-        XmlDiff {
-            path: path.to_string(),
-            diff_type: DiffType::StructureDifferent,
-            expected: Some(format!("{:?}", element1)),
-            actual: Some(format!("{:?}", element2)),
-            message: "Structure differs".to_string(),
+        // Check for extra attributes in element2
+        for (key, value2) in &element2.attributes {
+            let attr_ignored = if let Some(ignore_properties) = ignore_properties {
+                ignore_properties.iter().any(|prop| key == prop)
+            } else {
+                false
+            };
+
+            if !attr_ignored && !element1.attributes.contains_key(key) {
+                diffs.push(XmlDiff {
+                    path: path.to_string(),
+                    diff_type: DiffType::AttributeDifferent,
+                    expected: None,
+                    actual: Some(format!("{}={}", key, value2)),
+                    message: format!("Extra attribute '{}' in second XML", key),
+                });
+            }
         }
+
+        diffs
+    }
+
+    fn path_matches(&self, actual_path: &str, ignore_pattern: &str) -> bool {
+        // Support exact path matching and simple wildcard patterns
+        if ignore_pattern == actual_path {
+            return true; // Exact match
+        }
+        
+        // Support wildcard patterns (simple * at end)
+        if ignore_pattern.ends_with("*") {
+            let prefix = &ignore_pattern[..ignore_pattern.len() - 1];
+            return actual_path.starts_with(prefix);
+        }
+        
+        // Support path prefix matching (if pattern ends with /)
+        if ignore_pattern.ends_with("/") {
+            return actual_path.starts_with(ignore_pattern) || 
+                   format!("{}/", actual_path).starts_with(ignore_pattern);
+        }
+        
+        // Default: exact match only
+        false
     }
 }
 
@@ -325,5 +320,130 @@ mod tests {
         assert!(!result.matched);
         assert!(result.match_ratio < 1.0);
         assert!(!result.diffs.is_empty());
+    }
+
+    #[test]
+    fn test_attribute_and_content_differences() {
+        let service = XmlComparisonService::new();
+        let request = XmlComparisonRequest {
+            xml1: "<CVAMapping date=\"20250819\">test</CVAMapping>".to_string(),
+            xml2: "<CVAMapping date=\"20250818\">test2</CVAMapping>".to_string(),
+            ignore_paths: Some(vec![]),
+            ignore_properties: Some(vec![]),
+        };
+
+        let result = service.compare_xmls(&request).unwrap();
+        assert!(!result.matched);
+        assert_eq!(result.diffs.len(), 2); // Should have both attribute and content diffs
+        
+        // Check we have both types of diffs
+        let has_content_diff = result.diffs.iter().any(|d| matches!(d.diff_type, DiffType::ContentDifferent));
+        let has_attr_diff = result.diffs.iter().any(|d| matches!(d.diff_type, DiffType::AttributeDifferent));
+        
+        assert!(has_content_diff, "Should have content difference");
+        assert!(has_attr_diff, "Should have attribute difference");
+    }
+
+    #[test]
+    fn test_attribute_only_difference() {
+        let service = XmlComparisonService::new();
+        let request = XmlComparisonRequest {
+            xml1: "<CVAMapping date=\"20250819\">test</CVAMapping>".to_string(),
+            xml2: "<CVAMapping date=\"20250818\">test</CVAMapping>".to_string(),
+            ignore_paths: None,
+            ignore_properties: None,
+        };
+
+        let result = service.compare_xmls(&request).unwrap();
+        assert!(!result.matched);
+        assert_eq!(result.diffs.len(), 1);
+        assert!(matches!(result.diffs[0].diff_type, DiffType::AttributeDifferent));
+        assert_eq!(result.diffs[0].path, "/CVAMapping");
+        assert!(result.diffs[0].message.contains("date"));
+    }
+
+    #[test]
+    fn test_ignore_attribute_property() {
+        let service = XmlComparisonService::new();
+        let request = XmlComparisonRequest {
+            xml1: "<CVAMapping date=\"20250819\">test</CVAMapping>".to_string(),
+            xml2: "<CVAMapping date=\"20250818\">test</CVAMapping>".to_string(),
+            ignore_paths: None,
+            ignore_properties: Some(vec!["date".to_string()]),
+        };
+
+        let result = service.compare_xmls(&request).unwrap();
+        assert!(result.matched);
+        assert_eq!(result.diffs.len(), 0);
+    }
+
+    #[test]
+    fn test_content_only_difference() {
+        let service = XmlComparisonService::new();
+        let request = XmlComparisonRequest {
+            xml1: "<CVAMapping date=\"20250819\">test</CVAMapping>".to_string(),
+            xml2: "<CVAMapping date=\"20250819\">test2</CVAMapping>".to_string(),
+            ignore_paths: None,
+            ignore_properties: None,
+        };
+
+        let result = service.compare_xmls(&request).unwrap();
+        assert!(!result.matched);
+        assert_eq!(result.diffs.len(), 1);
+        assert!(matches!(result.diffs[0].diff_type, DiffType::ContentDifferent));
+        assert_eq!(result.diffs[0].path, "/CVAMapping");
+    }
+
+    #[test]
+    fn test_path_matching_exact() {
+        let service = XmlComparisonService::new();
+        assert!(service.path_matches("/root/child", "/root/child"));
+        assert!(!service.path_matches("/root/child", "/root/other"));
+    }
+
+    #[test]
+    fn test_path_matching_wildcard() {
+        let service = XmlComparisonService::new();
+        assert!(service.path_matches("/root/child/grandchild", "/root/*"));
+        assert!(service.path_matches("/root/child", "/root/*"));
+        assert!(!service.path_matches("/other/child", "/root/*"));
+    }
+
+    #[test]
+    fn test_path_matching_prefix() {
+        let service = XmlComparisonService::new();
+        assert!(service.path_matches("/root/child/grandchild", "/root/"));
+        assert!(service.path_matches("/root", "/root/"));
+        assert!(!service.path_matches("/other", "/root/"));
+    }
+
+    #[test]
+    fn test_ignore_paths_exact_match() {
+        let service = XmlComparisonService::new();
+        let request = XmlComparisonRequest {
+            xml1: "<root><child>test1</child><other>test2</other></root>".to_string(),
+            xml2: "<root><child>different</child><other>test2</other></root>".to_string(),
+            ignore_paths: Some(vec!["/root/child".to_string()]),
+            ignore_properties: None,
+        };
+
+        let result = service.compare_xmls(&request).unwrap();
+        assert!(result.matched);
+        assert_eq!(result.diffs.len(), 0);
+    }
+
+    #[test]
+    fn test_ignore_paths_wildcard() {
+        let service = XmlComparisonService::new();
+        let request = XmlComparisonRequest {
+            xml1: "<root><child><deep>test1</deep></child><other>test2</other></root>".to_string(),
+            xml2: "<root><child><deep>different</deep></child><other>test2</other></root>".to_string(),
+            ignore_paths: Some(vec!["/root/child/*".to_string()]),
+            ignore_properties: None,
+        };
+
+        let result = service.compare_xmls(&request).unwrap();
+        assert!(result.matched);
+        assert_eq!(result.diffs.len(), 0);
     }
 }

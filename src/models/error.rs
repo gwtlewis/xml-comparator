@@ -5,14 +5,15 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
+use utoipa::ToSchema;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, ToSchema)]
 pub enum AppError {
     #[error("XML parsing error: {0}")]
     XmlParseError(String),
     
     #[error("HTTP request error: {0}")]
-    HttpError(#[from] reqwest::Error),
+    HttpError(String),
     
     #[error("Authentication failed: {0}")]
     AuthError(String),

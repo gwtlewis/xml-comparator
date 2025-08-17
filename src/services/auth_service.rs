@@ -37,7 +37,7 @@ impl AuthService {
         Ok(LoginResponse {
             session_id: session.id,
             cookies: session.cookies,
-            expires_at: session.expires_at,
+            expires_at: session.expires_at.to_rfc3339(),
         })
     }
 
@@ -46,22 +46,7 @@ impl AuthService {
         Ok(sessions.get(session_id).cloned())
     }
 
-    pub async fn validate_session(&self, session_id: &str) -> AppResult<bool> {
-        let sessions = self.session_store.read().await;
-        if let Some(session) = sessions.get(session_id) {
-            if session.is_expired() {
-                // Remove expired session
-                drop(sessions);
-                let mut sessions = self.session_store.write().await;
-                sessions.remove(session_id);
-                Ok(false)
-            } else {
-                Ok(true)
-            }
-        } else {
-            Ok(false)
-        }
-    }
+
 
     pub async fn logout(&self, session_id: &str) -> AppResult<()> {
         let mut sessions = self.session_store.write().await;
@@ -129,13 +114,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_session_validation() {
+    async fn test_session_retrieval() {
         let http_client = Arc::new(HttpClientService::new());
         let auth_service = AuthService::new(http_client);
         
         // Test with non-existent session
-        let result = auth_service.validate_session("non-existent").await;
+        let result = auth_service.get_session("non-existent").await;
         assert!(result.is_ok());
-        assert!(!result.unwrap());
+        assert!(result.unwrap().is_none());
     }
 }

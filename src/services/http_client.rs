@@ -1,102 +1,48 @@
-use crate::models::{AppError, AppResult, Session, SessionStore};
+use crate::models::{AppError, AppResult, Session};
 use reqwest::Client;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 
 pub struct HttpClientService {
     client: Client,
-    session_store: SessionStore,
 }
 
 impl HttpClientService {
     pub fn new() -> Self {
         Self {
             client: Client::new(),
-            session_store: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    pub async fn download_xml(&self, url: &str, session_id: Option<&str>) -> AppResult<String> {
+    pub async fn download_xml(
+        &self, 
+        url: &str, 
+        auth_service: Option<&crate::services::AuthService>,
+        session_id: Option<&str>
+    ) -> AppResult<String> {
         let mut request = self.client.get(url);
 
         // Add cookies if session exists
-        if let Some(session_id) = session_id {
-            if let Some(session) = self.get_session(session_id).await? {
+        if let (Some(auth_service), Some(session_id)) = (auth_service, session_id) {
+            if let Some(session) = auth_service.get_session(session_id).await? {
                 for cookie in &session.cookies {
                     request = request.header("Cookie", cookie);
                 }
             }
         }
 
-        let response = request.send().await?;
+        let response = request.send().await.map_err(|e| AppError::HttpError(e.to_string()))?;
         
         if !response.status().is_success() {
-            return Err(AppError::HttpError(
-                reqwest::Error::status(response.status())
+            return Err(AppError::InternalError(
+                format!("HTTP request failed with status: {}", response.status())
             ));
         }
 
-        let content = response.text().await?;
+        let content = response.text().await.map_err(|e| AppError::HttpError(e.to_string()))?;
         Ok(content)
     }
 
-    pub async fn download_xmls_batch(
-        &self,
-        urls: &[String],
-        session_id: Option<&str>,
-    ) -> AppResult<Vec<AppResult<String>>> {
-        let mut futures = Vec::new();
-
-        for url in urls {
-            let url = url.clone();
-            let session_id = session_id.map(|s| s.to_string());
-            let client = self.client.clone();
-            let session_store = self.session_store.clone();
-
-            let future = tokio::spawn(async move {
-                let mut request = client.get(&url);
-
-                if let Some(session_id) = session_id {
-                    if let Ok(sessions) = session_store.read().await {
-                        if let Some(session) = sessions.get(&session_id) {
-                            for cookie in &session.cookies {
-                                request = request.header("Cookie", cookie);
-                            }
-                        }
-                    }
-                }
-
-                match request.send().await {
-                    Ok(response) => {
-                        if response.status().is_success() {
-                            match response.text().await {
-                                Ok(content) => Ok(content),
-                                Err(e) => Err(AppError::HttpError(e)),
-                            }
-                        } else {
-                            Err(AppError::HttpError(
-                                reqwest::Error::status(response.status())
-                            ))
-                        }
-                    }
-                    Err(e) => Err(AppError::HttpError(e)),
-                }
-            });
-
-            futures.push(future);
-        }
-
-        let mut results = Vec::new();
-        for future in futures {
-            match future.await {
-                Ok(result) => results.push(result),
-                Err(_) => results.push(Err(AppError::InternalError("Task failed".to_string()))),
-            }
-        }
-
-        Ok(results)
-    }
+    // Note: batch download method removed as it's not used and would need significant refactoring
+    // to work with the new auth service pattern
 
     pub async fn authenticate(
         &self,
@@ -109,7 +55,7 @@ impl HttpClientService {
             .post(url)
             .form(&[("username", username), ("password", password)])
             .send()
-            .await?;
+            .await.map_err(|e| AppError::HttpError(e.to_string()))?;
 
         if !response.status().is_success() {
             return Err(AppError::AuthError("Authentication failed".to_string()));
@@ -123,25 +69,10 @@ impl HttpClientService {
             .collect();
 
         let session = Session::new(url.to_string(), cookies);
-        
-        // Store session
-        {
-            let mut sessions = self.session_store.write().await;
-            sessions.insert(session.id.clone(), session.clone());
-        }
-
         Ok(session)
     }
 
-    async fn get_session(&self, session_id: &str) -> AppResult<Option<Session>> {
-        let sessions = self.session_store.read().await;
-        Ok(sessions.get(session_id).cloned())
-    }
 
-    pub async fn cleanup_expired_sessions(&self) {
-        let mut sessions = self.session_store.write().await;
-        sessions.retain(|_, session| !session.is_expired());
-    }
 }
 
 #[cfg(test)]
@@ -163,7 +94,7 @@ mod tests {
         let service = HttpClientService::new();
         let url = format!("{}/test.xml", mock_server.uri());
         
-        let result = service.download_xml(&url, None).await;
+        let result = service.download_xml(&url, None, None).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "<test>content</test>");
     }
@@ -181,7 +112,7 @@ mod tests {
         let service = HttpClientService::new();
         let url = format!("{}/notfound.xml", mock_server.uri());
         
-        let result = service.download_xml(&url, None).await;
+        let result = service.download_xml(&url, None, None).await;
         assert!(result.is_err());
     }
 }

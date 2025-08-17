@@ -9,7 +9,7 @@ use crate::models::{
 };
 use crate::services::{XmlComparisonService, HttpClientService};
 use std::sync::Arc;
-use utoipa::ToSchema;
+
 
 pub type AppState = Arc<AppStateInner>;
 
@@ -17,6 +17,7 @@ pub type AppState = Arc<AppStateInner>;
 pub struct AppStateInner {
     pub xml_service: XmlComparisonService,
     pub http_client: Arc<HttpClientService>,
+    pub auth_service: Arc<crate::services::AuthService>,
 }
 
 /// Compare two XML contents
@@ -56,13 +57,31 @@ pub async fn compare_urls(
     State(state): State<AppState>,
     Json(request): Json<UrlComparisonRequest>,
 ) -> AppResult<Json<XmlComparisonResponse>> {
+    // Handle authentication - either use session_id or create new session from auth_credentials
+    let session_id_string = if let Some(session_id) = &request.session_id {
+        Some(session_id.clone())
+    } else if let Some(auth_creds) = &request.auth_credentials {
+        // Create a temporary session for this request
+        let login_request = crate::models::LoginRequest {
+            url: request.url1.clone(), // Use first URL as login URL
+            username: auth_creds.username.clone(),
+            password: auth_creds.password.clone(),
+        };
+        let login_response = state.auth_service.login(&login_request).await?;
+        Some(login_response.session_id)
+    } else {
+        None
+    };
+    
+    let session_id = session_id_string.as_deref();
+
     // Download XMLs from URLs
     let xml1 = state.http_client
-        .download_xml(&request.url1, request.auth_credentials.as_ref().map(|_| "session_id"))
+        .download_xml(&request.url1, Some(&*state.auth_service), session_id)
         .await?;
     
     let xml2 = state.http_client
-        .download_xml(&request.url2, request.auth_credentials.as_ref().map(|_| "session_id"))
+        .download_xml(&request.url2, Some(&*state.auth_service), session_id)
         .await?;
 
     // Create comparison request
@@ -97,7 +116,8 @@ pub async fn compare_xmls_batch(
     let mut successful = 0;
     let mut failed = 0;
 
-    for comparison in request.comparisons {
+    let _total_comparisons = request.comparisons.len();
+    for comparison in &request.comparisons {
         match state.xml_service.compare_xmls(&comparison) {
             Ok(result) => {
                 results.push(result);
@@ -149,30 +169,51 @@ pub async fn compare_urls_batch(
     // Process comparisons concurrently
     let mut futures = Vec::new();
     
-    for comparison in request.comparisons {
+    let _total_comparisons = request.comparisons.len();
+    for comparison in request.comparisons.clone() {
         let state = state.clone();
         let future = tokio::spawn(async move {
+            // Handle authentication for this comparison
+            let session_id_string = if let Some(session_id) = &comparison.session_id {
+                Some(session_id.clone())
+            } else if let Some(auth_creds) = &comparison.auth_credentials {
+                // Create a temporary session for this request
+                let login_request = crate::models::LoginRequest {
+                    url: comparison.url1.clone(),
+                    username: auth_creds.username.clone(),
+                    password: auth_creds.password.clone(),
+                };
+                match state.auth_service.login(&login_request).await {
+                    Ok(login_response) => Some(login_response.session_id),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            };
+            
+            let session_id = session_id_string.as_deref();
+
             // Download XMLs from URLs
             let xml1_result = state.http_client
-                .download_xml(&comparison.url1, comparison.auth_credentials.as_ref().map(|_| "session_id"))
+                .download_xml(&comparison.url1, Some(&*state.auth_service), session_id)
                 .await;
             
             let xml2_result = state.http_client
-                .download_xml(&comparison.url2, comparison.auth_credentials.as_ref().map(|_| "session_id"))
+                .download_xml(&comparison.url2, Some(&*state.auth_service), session_id)
                 .await;
 
             match (xml1_result, xml2_result) {
                 (Ok(xml1), Ok(xml2)) => {
-                    let comparison_request = XmlComparisonRequest {
-                        xml1,
-                        xml2,
-                        ignore_paths: comparison.ignore_paths,
-                        ignore_properties: comparison.ignore_properties,
-                    };
+                            let comparison_request = XmlComparisonRequest {
+            xml1,
+            xml2,
+            ignore_paths: comparison.ignore_paths.clone(),
+            ignore_properties: comparison.ignore_properties.clone(),
+        };
 
                     state.xml_service.compare_xmls(&comparison_request)
                 }
-                _ => Err(AppError::HttpError(reqwest::Error::status(reqwest::StatusCode::BAD_GATEWAY))),
+                _ => Err(AppError::InternalError("Failed to download XML from URL".to_string())),
             }
         });
         

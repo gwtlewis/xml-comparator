@@ -36,16 +36,17 @@ pub enum DiffType {
     StructureDifferent,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct UrlComparisonRequest {
     pub url1: String,
     pub url2: String,
     pub ignore_paths: Option<Vec<String>>,
     pub ignore_properties: Option<Vec<String>>,
     pub auth_credentials: Option<AuthCredentials>,
+    pub session_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct AuthCredentials {
     pub username: String,
     pub password: String,
@@ -80,5 +81,5 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub session_id: String,
     pub cookies: Vec<String>,
-    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: String, // ISO 8601 formatted string
 }

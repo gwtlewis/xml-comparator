@@ -1,0 +1,28 @@
+# Performance test results and temporary files
+results/
+*.json
+*.log
+
+# Tool build artifacts
+tools/target/
+tools/Cargo.lock
+
+# Test payloads (can be large)
+test_payload_*.json
+payload_*.json
+
+# System monitoring output
+*.prof
+*.dat
+*.svg
+
+# k6 output files
+k6_results.*
+summary.*
+
+# WRK output
+wrk_results.*
+
+# Benchmark artifacts
+*.perf
+*.flamegraph

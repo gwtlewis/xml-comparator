@@ -2,11 +2,8 @@ use axum::{
     extract::State,
     Json,
 };
-use crate::models::{LoginRequest, LoginResponse, AppError, AppResult};
-use crate::services::AuthService;
-use crate::handlers::AppState;
-use std::sync::Arc;
-use utoipa::ToSchema;
+use crate::models::{LoginRequest, LoginResponse, AppResult};
+use crate::handlers::comparison_handlers::AppState;
 
 /// Authenticate with a URL and get session cookies
 #[utoipa::path(
@@ -25,10 +22,7 @@ pub async fn login(
     State(state): State<AppState>,
     Json(request): Json<LoginRequest>,
 ) -> AppResult<Json<LoginResponse>> {
-    // For now, we'll create a temporary auth service
-    // In a real implementation, you'd want to store the auth service in the app state
-    let auth_service = AuthService::new(state.http_client.clone());
-    let response = auth_service.login(&request).await?;
+    let response = state.auth_service.login(&request).await?;
     Ok(Json(response))
 }
 
@@ -50,9 +44,6 @@ pub async fn logout(
     State(state): State<AppState>,
     axum::extract::Path(session_id): axum::extract::Path<String>,
 ) -> AppResult<Json<()>> {
-    // For now, we'll create a temporary auth service
-    // In a real implementation, you'd want to store the auth service in the app state
-    let auth_service = AuthService::new(state.http_client.clone());
-    auth_service.logout(&session_id).await?;
+    state.auth_service.logout(&session_id).await?;
     Ok(Json(()))
 }
