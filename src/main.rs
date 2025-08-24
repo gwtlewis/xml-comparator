@@ -91,45 +91,33 @@ async fn main() {
         .allow_methods([Method::GET, Method::POST])
         .allow_origin(Any);
 
-    // Create API router with base path
-    let api_router = Router::new()
-        // XML comparison endpoints
-        .route("/api/compare/xml", post(comparison_handlers::compare_xmls))
-        .route("/api/compare/xml/batch", post(comparison_handlers::compare_xmls_batch))
-        
-        // URL comparison endpoints
-        .route("/api/compare/url", post(comparison_handlers::compare_urls))
-        .route("/api/compare/url/batch", post(comparison_handlers::compare_urls_batch))
-        
-        // Authentication endpoints
-        .route("/api/auth/login", post(auth_handlers::login))
-        .route("/api/auth/logout/:session_id", post(auth_handlers::logout))
-        
-        // Health check
-        .route("/health", get(health_check))
-        
-        .with_state(state.clone());
-
-    // Main app router - simplified for proxy compatibility
+    // Main app router - flattened for app-runner-router compatibility
     let app = Router::new()
-        // Redirect root to swagger UI - use relative path
-        .route("/", get(|| async { Redirect::permanent("/swagger-ui/") }))
-        
-        // Root level health check for proxy compatibility
-        .route("/health", get(health_check))
-        
-        // Root level Swagger UI for proxy compatibility
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        
         // Landing page for base path (both with and without trailing slash)
         .route("/xml-compare-api", get(landing_page))
         .route("/xml-compare-api/", get(landing_page))
         
-        // Mount API router under base path
-        .nest("/xml-compare-api", api_router)
+        // API endpoints at base path level (flattened, no nesting)
+        .route("/xml-compare-api/api/compare/xml", post(comparison_handlers::compare_xmls))
+        .route("/xml-compare-api/api/compare/xml/batch", post(comparison_handlers::compare_xmls_batch))
+        .route("/xml-compare-api/api/compare/url", post(comparison_handlers::compare_urls))
+        .route("/xml-compare-api/api/compare/url/batch", post(comparison_handlers::compare_urls_batch))
+        .route("/xml-compare-api/api/auth/login", post(auth_handlers::login))
+        .route("/xml-compare-api/api/auth/logout/:session_id", post(auth_handlers::logout))
+        .route("/xml-compare-api/health", get(health_check))
         
-        // Base path level Swagger UI (uses a different OpenAPI endpoint path)
+        // Root level endpoints for proxy compatibility
+        .route("/", get(|| async { Redirect::permanent("/xml-compare-api/") }))
+        .route("/health", get(health_check))
+        
+        // Swagger UI at root level (for proxy compatibility)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        
+        // Swagger UI at base path level
         .merge(SwaggerUi::new("/xml-compare-api/swagger-ui").url("/xml-compare-api/api-docs/openapi.json", ApiDoc::openapi()))
+        
+        // Apply state to all routes
+        .with_state(state.clone())
         
         // Configure body limits (500MB for large batch operations)
         .layer(DefaultBodyLimit::max(500 * 1024 * 1024))
