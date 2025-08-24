@@ -68,7 +68,7 @@ impl AuthService {
 mod tests {
     use super::*;
     use wiremock::{MockServer, Mock, ResponseTemplate};
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, header};
 
     #[tokio::test]
     async fn test_login_success() {
@@ -76,6 +76,7 @@ mod tests {
         
         Mock::given(method("POST"))
             .and(path("/login"))
+            .and(header("Authorization", "Basic dGVzdDpwYXNzd29yZA==")) // test:password
             .respond_with(ResponseTemplate::new(200)
                 .insert_header("set-cookie", "session=abc123; HttpOnly"))
             .mount(&mock_server)

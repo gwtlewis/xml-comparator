@@ -2,7 +2,6 @@ use axum::{
     routing::{post, get},
     Router,
     http::Method,
-    response::Redirect,
     extract::DefaultBodyLimit,
 };
 use tower_http::cors::{CorsLayer, Any};
@@ -52,8 +51,7 @@ use services::{XmlComparisonService, HttpClientService, AuthService};
         (name = "Authentication", description = "Authentication endpoints")
     ),
     servers(
-        (url = "/xml-compare-api", description = "XML Compare API Server (Base Path)"),
-        (url = "/", description = "XML Compare API Server (Root)")
+        (url = "/xml-compare-api", description = "XML Compare API Server (Base Path)")
     ),
     info(
         title = "XML Comparison API",
@@ -106,14 +104,7 @@ async fn main() {
         .route("/xml-compare-api/api/auth/logout/:session_id", post(auth_handlers::logout))
         .route("/xml-compare-api/health", get(health_check))
         
-        // Root level endpoints for proxy compatibility
-        .route("/", get(|| async { Redirect::permanent("/xml-compare-api/") }))
-        .route("/health", get(health_check))
-        
-        // Swagger UI at root level (for proxy compatibility)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        
-        // Swagger UI at base path level
+        // Swagger UI at base path level only
         .merge(SwaggerUi::new("/xml-compare-api/swagger-ui").url("/xml-compare-api/api-docs/openapi.json", ApiDoc::openapi()))
         
         // Apply state to all routes
@@ -142,12 +133,9 @@ async fn main() {
     tracing::info!("Landing page available at:");
     tracing::info!("  - http://0.0.0.0:{}/xml-compare-api/ (base path)", port);
     tracing::info!("Swagger UI available at:");
-    tracing::info!("  - http://0.0.0.0:{}/swagger-ui/ (root level)", port);
     tracing::info!("  - http://0.0.0.0:{}/xml-compare-api/swagger-ui/ (base path)", port);
     tracing::info!("Health check available at:");
-    tracing::info!("  - http://0.0.0.0:{}/health (root level)", port);
     tracing::info!("  - http://0.0.0.0:{}/xml-compare-api/health (base path)", port);
-    tracing::info!("Root (/) redirects to Swagger UI");
     tracing::info!("Base path (/) shows landing page");
     tracing::info!("Session cleanup task started (runs every 5 minutes)");
 
@@ -386,31 +374,31 @@ async fn landing_page() -> axum::response::Html<&'static str> {
             <div class="endpoints">
                 <div class="endpoint">
                     <span class="method post">POST</span>
-                    <code>/api/compare/xml</code> - Compare two XML strings
+                    <code>/xml-compare-api/api/compare/xml</code> - Compare two XML strings
                 </div>
                 <div class="endpoint">
                     <span class="method post">POST</span>
-                    <code>/api/compare/xml/batch</code> - Batch XML comparison
+                    <code>/xml-compare-api/api/compare/xml/batch</code> - Batch XML comparison
                 </div>
                 <div class="endpoint">
                     <span class="method post">POST</span>
-                    <code>/api/compare/url</code> - Compare XMLs from URLs
+                    <code>/xml-compare-api/api/compare/url</code> - Compare XMLs from URLs
                 </div>
                 <div class="endpoint">
                     <span class="method post">POST</span>
-                    <code>/api/compare/url/batch</code> - Batch URL comparison
+                    <code>/xml-compare-api/api/compare/url/batch</code> - Batch URL comparison
                 </div>
                 <div class="endpoint">
                     <span class="method post">POST</span>
-                    <code>/api/auth/login</code> - Authenticate with URL
+                    <code>/xml-compare-api/api/auth/login</code> - Authenticate with URL
                 </div>
                 <div class="endpoint">
                     <span class="method post">POST</span>
-                    <code>/api/auth/logout/{session_id}</code> - Logout session
+                    <code>/xml-compare-api/api/auth/logout/{session_id}</code> - Logout session
                 </div>
                 <div class="endpoint">
                     <span class="method get">GET</span>
-                    <code>/health</code> - Health check
+                    <code>/xml-compare-api/health</code> - Health check
                 </div>
             </div>
             
@@ -462,7 +450,6 @@ curl -X POST http://localhost:3000/xml-compare-api/api/compare/url \
             <div style="text-align: center; margin: 40px 0;">
                 <a href="/xml-compare-api/swagger-ui/" class="btn">📚 Interactive API Docs</a>
                 <a href="/xml-compare-api/health" class="btn secondary">🏥 Health Check</a>
-                <a href="/swagger-ui/" class="btn secondary">🔗 Root Swagger UI</a>
             </div>
         </div>
         

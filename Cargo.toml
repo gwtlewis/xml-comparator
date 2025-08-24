@@ -30,6 +30,9 @@ quick-xml = { version = "0.31", features = ["serialize"] }
 # HTTP client
 reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
 
+# Base64 encoding
+base64 = "0.21"
+
 # Error handling
 anyhow = "1.0"
 thiserror = "1.0"

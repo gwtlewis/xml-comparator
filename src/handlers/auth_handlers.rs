@@ -8,7 +8,7 @@ use crate::handlers::comparison_handlers::AppState;
 /// Authenticate with a URL and get session cookies
 #[utoipa::path(
     post,
-    path = "/api/auth/login",
+    path = "/xml-compare-api/api/auth/login",
     request_body = LoginRequest,
     responses(
         (status = 200, description = "Authentication successful", body = LoginResponse),
@@ -29,7 +29,7 @@ pub async fn login(
 /// Logout and invalidate session
 #[utoipa::path(
     post,
-    path = "/api/auth/logout/{session_id}",
+    path = "/xml-compare-api/api/auth/logout/{session_id}",
     params(
         ("session_id" = String, Path, description = "Session ID to logout")
     ),

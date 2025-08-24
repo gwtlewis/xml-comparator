@@ -23,7 +23,7 @@ pub struct AppStateInner {
 /// Compare two XML contents
 #[utoipa::path(
     post,
-    path = "/api/compare/xml",
+    path = "/xml-compare-api/api/compare/xml",
     request_body = XmlComparisonRequest,
     responses(
         (status = 200, description = "XML comparison completed", body = XmlComparisonResponse),
@@ -43,7 +43,7 @@ pub async fn compare_xmls(
 /// Compare XMLs from two URLs
 #[utoipa::path(
     post,
-    path = "/api/compare/url",
+    path = "/xml-compare-api/api/compare/url",
     request_body = UrlComparisonRequest,
     responses(
         (status = 200, description = "URL XML comparison completed", body = XmlComparisonResponse),
@@ -99,7 +99,7 @@ pub async fn compare_urls(
 /// Compare multiple XML pairs in batch
 #[utoipa::path(
     post,
-    path = "/api/compare/xml/batch",
+    path = "/xml-compare-api/api/compare/xml/batch",
     request_body = BatchXmlComparisonRequest,
     responses(
         (status = 200, description = "Batch XML comparison completed", body = BatchComparisonResponse),
@@ -148,7 +148,7 @@ pub async fn compare_xmls_batch(
 /// Compare XMLs from multiple URL pairs in batch
 #[utoipa::path(
     post,
-    path = "/api/compare/url/batch",
+    path = "/xml-compare-api/api/compare/url/batch",
     request_body = BatchUrlComparisonRequest,
     responses(
         (status = 200, description = "Batch URL comparison completed", body = BatchComparisonResponse),
